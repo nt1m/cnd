@@ -3,29 +3,29 @@ import argparse
 import math
 import json
 from time import sleep
+from datetime import datetime
 import signal
+import sys
 
 ec2 = boto3.resource("ec2")
 sqs = boto3.resource("sqs")
-
-all_instances = list()
-input_queue = None
-output_queue = None
-
 
 ## Initialization
 script = open("instance.py", "r").read()
 
 def create_instances(number_vms):
-    all_instances = ec2.create_instances(
+    return ec2.create_instances(
         UserData=script,
-        ImageId="ami-03849700434eafb7f",
+        ImageId="ami-02e8790767f496602",
+        # ImageId="ami-03849700434eafb7f",
         # ImageId="ami-0b2d8d1abb76a53d8",
         InstanceType="t2.micro",
         MinCount=1,
         MaxCount=number_vms,
+        IamInstanceProfile={
+            "Name": "instance"
+        }
     )
-    return all_instances
 
 def create_or_get_queue(name):
     try:
@@ -57,13 +57,29 @@ def receive_messages(queue, n_messages=1):
     return messages
 
 
+shutdown_data = {
+    "instances": list(),
+    "input_queue": None,
+    "output_queue": None,
+}
+
 ## Main
-def main(number_vms=5, difficulty=32):
+def main(number_vms=5, difficulty=32, timeout=None):
+    if timeout != None:
+        signal.alarm(timeout)
+
+    epoch = datetime.utcfromtimestamp(0)
+    start_time = (datetime.now() - epoch).total_seconds()
     max_nonce=2**32
     input_queue = create_or_get_queue("input_queue.fifo")
+    shutdown_data["input_queue"] = input_queue
+
     output_queue = create_or_get_queue("output_queue.fifo")
+    shutdown_data["output_queue"] = output_queue
 
     instances = create_instances(number_vms)
+    shutdown_data["instances"] = instances
+
     print("Started", number_vms, "instances")
 
     # split out the tasks
@@ -94,10 +110,18 @@ def main(number_vms=5, difficulty=32):
     print("Got message", messages)
 
     body = json.loads(messages[0].body)
+    end_time = (datetime.now() - epoch).total_seconds()
 
-    print(body)
-    print("The golden number is:", body["golden_number"])
     print("The golden nonce is:", body["golden_nonce"])
+    print("The golden hash is:", body["golden_hash"])
+    print("Cloud start time:", body["start_time"])
+    print("Cloud end time:", body["end_time"])
+
+    print("start time:", start_time)
+    print("end time:", end_time)
+
+    print("Cloud overhead:", (body["start_time"] - start_time) + (end_time - body["end_time"]))
+    print("Cloud delta time:", body["end_time"] - body["start_time"])
 
     # clean up
     cleanup(instances, input_queue, output_queue);
@@ -115,7 +139,12 @@ def cleanup(instances, input_q, output_q):
     output_q.delete()
 
 def scram(signal, stack_frame):
-    cleanup(all_instances, input_queue, output_queue)
+    print("Signal found:", signal)
+    cleanup(
+        shutdown_data["instances"],
+        shutdown_data["input_queue"],
+        shutdown_data["output_queue"]
+    )
     sys.exit(0)
 
 signal.signal(signal.SIGINT, scram)
@@ -123,14 +152,11 @@ signal.signal(signal.SIGALRM, scram)
 
 
 ## Argument parser
-parser = argparse.ArgumentParser(description="Cloud nonce finder")
+parser = argparse.ArgumentParser(description="Cloud nonce discovery")
 parser.add_argument("-n", type=int, dest="instances", default=1, help="Number of VMs to spawn")
-parser.add_argument("-d", "--difficulty", type=int, default=6, help="Difficulty (number of leading zeros) for the nonce finding algorithm")
-parser.add_argument("-t", "--timeout", type=int, default=None, help="Timeout until it shutsdown")
+parser.add_argument("-d", "--difficulty", type=int, default=6, help="Difficulty (number of leading zeroes) for the nonce discovery algorithm")
+parser.add_argument("-t", "--timeout", type=int, default=None, help="Maximum time spent in seconds.")
 
 args = parser.parse_args()
 
-if args.timeout != None:
-    signal.alarm(args.timeout)
-
-main(args.instances, args.difficulty)
+main(args.instances, args.difficulty, args.timeout)
