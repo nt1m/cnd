@@ -17,8 +17,6 @@ def create_instances(number_vms):
     return ec2.create_instances(
         UserData=script,
         ImageId="ami-02e8790767f496602",
-        # ImageId="ami-03849700434eafb7f",
-        # ImageId="ami-0b2d8d1abb76a53d8",
         InstanceType="t2.micro",
         MinCount=1,
         MaxCount=number_vms,

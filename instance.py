@@ -91,22 +91,4 @@ def main():
     if not found:
         print("Couldn't find golden nonce")
 
-# def main():
-#     difficulty = 32
-#     i = 0
-#     min = 0
-#     max = 2**32
-#     while i < max:
-#         nonce = compute_nonce(i)
-#
-#         # if nonce is correct, send back message to output queue, and stop program
-#         if is_golden_nonce(difficulty, nonce):
-#             print("Found golden nonce")
-#             print({
-#                     "golden_number": i,
-#                     "golden_nonce": nonce,
-#             })
-#             break
-#         i += 1
-
 main()
